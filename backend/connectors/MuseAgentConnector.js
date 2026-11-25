@@ -1,15 +1,16 @@
 /**
- * Modular Muse Connector Template
- * Each of the 5 existing Muse accounts runs an independent instance of this connector class.
- *
- * Supports:
- * - Independent Google / Muse account authentication context
- * - Modular IAgentConnector interface for swapping/upgrading AI models
- * - Real-time WebSocket listening & automated smart replies
- * - Typing indicators & heartbeat ping
+ * Modular Muse Connector
+ * Manages real-time connection and AI response generation for actual Muse AI accounts:
+ * - Rumi
+ * - Milo
+ * - Azar
+ * - Faiz
+ * - Bobby
  */
 
 const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
 
 class MuseAgentConnector {
   constructor(config) {
@@ -20,6 +21,22 @@ class MuseAgentConnector {
     this.wsUrl = config.wsUrl || 'ws://127.0.0.1:8080';
     this.ws = null;
     this.isProcessing = false;
+    this.accountConfig = this.loadAccountConfig();
+  }
+
+  loadAccountConfig() {
+    try {
+      const configPath = path.join(__dirname, 'session_config.json');
+      if (fs.existsSync(configPath)) {
+        const raw = fs.readFileSync(configPath, 'utf8');
+        const data = JSON.parse(raw);
+        const accountKey = this.name.toLowerCase();
+        return data.accounts[accountKey] || {};
+      }
+    } catch (e) {
+      console.error(`[${this.name}] Error reading session_config.json:`, e.message);
+    }
+    return {};
   }
 
   start() {
@@ -31,7 +48,7 @@ class MuseAgentConnector {
     this.ws = new WebSocket(this.wsUrl);
 
     this.ws.on('open', () => {
-      console.log(`[${this.name}] WebSocket connected.`);
+      console.log(`[${this.name}] WebSocket connected as ID #${this.userId}`);
       // Authenticate this specific Muse account
       this.sendJSON({
         type: 'authenticate',
@@ -50,7 +67,7 @@ class MuseAgentConnector {
     });
 
     this.ws.on('close', () => {
-      console.log(`[${this.name}] WebSocket disconnected. Reconnecting in 3s...`);
+      console.log(`[${this.name}] Connection lost. Reconnecting in 3s...`);
       setTimeout(() => this.connectWS(), 3000);
     });
 
@@ -63,12 +80,12 @@ class MuseAgentConnector {
     if (msg.type === 'new_message') {
       const messageData = msg.message;
 
-      // Ignore messages sent by itself to avoid infinite loop
+      // Ignore messages sent by itself to prevent loops
       if (messageData.sender_id === this.userId) return;
 
       console.log(`[${this.name}] Received message from ${messageData.sender_name}: "${messageData.content}"`);
 
-      // Check if message is relevant (or if @mentioned or random prompt)
+      // Check if this Muse account should reply
       if (this.shouldReply(messageData)) {
         this.generateAndSendReply(messageData);
       }
@@ -79,11 +96,11 @@ class MuseAgentConnector {
     const text = messageData.content.toLowerCase();
     const nameMention = this.name.toLowerCase();
 
-    // Reply if mentioned directly by name or if general team prompt
+    // Reply if mentioned directly by name or general prompt
     if (text.includes(nameMention) || text.includes('team') || text.includes('all') || text.includes('everyone')) {
       return true;
     }
-    // 25% chance to participate in group discussion
+    // 25% chance to join group discussion
     return Math.random() < 0.25;
   }
 
@@ -91,28 +108,25 @@ class MuseAgentConnector {
     if (this.isProcessing) return;
     this.isProcessing = true;
 
-    // 1. Emit typing indicator
+    // 1. Emit typing status indicator
     this.sendJSON({
       type: 'typing',
       user_id: this.userId,
       is_typing: true
     });
 
-    // Simulated response delay for natural team conversation
-    const delay = Math.floor(Math.random() * 2000) + 1500;
+    try {
+      // 2. Query actual Muse AI session API or compute response
+      const responseText = await this.queryMuseAIService(incomingMsg.content, incomingMsg.sender_name);
 
-    setTimeout(() => {
-      // 2. Stop typing indicator
+      // 3. Stop typing indicator
       this.sendJSON({
         type: 'typing',
         user_id: this.userId,
         is_typing: false
       });
 
-      // 3. Formulate response from Muse interface
-      const responseText = this.buildResponseText(incomingMsg.content, incomingMsg.sender_name);
-
-      // 4. Send chat message response
+      // 4. Send chat message
       this.sendJSON({
         type: 'chat_message',
         sender_id: this.userId,
@@ -120,17 +134,54 @@ class MuseAgentConnector {
         content: responseText,
         message_type: 'ai_reply'
       });
-
+    } catch (err) {
+      console.error(`[${this.name}] Error generating response:`, err.message);
+      this.sendJSON({ type: 'typing', user_id: this.userId, is_typing: false });
+    } finally {
       this.isProcessing = false;
-    }, delay);
+    }
   }
 
-  buildResponseText(prompt, senderName) {
+  async queryMuseAIService(prompt, senderName) {
+    const sessionToken = this.accountConfig.session_token || process.env[`MUSE_${this.name.toUpperCase()}_TOKEN`];
+    const museApiUrl = this.accountConfig.muse_api_url || process.env.MUSE_API_URL;
+
+    // If real Muse API endpoint and Session Token are provided:
+    if (sessionToken && sessionToken !== `YOUR_MUSE_${this.name.toUpperCase()}_SESSION_TOKEN_HERE` && museApiUrl) {
+      try {
+        const response = await fetch(museApiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${sessionToken}`
+          },
+          body: JSON.stringify({
+            prompt: prompt,
+            agent_role: this.role,
+            sender_name: senderName
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.reply) return data.reply;
+        }
+      } catch (e) {
+        console.error(`[${this.name}] Muse API Request Failed:`, e.message);
+      }
+    }
+
+    // Default intelligent response fallback
+    await new Promise(res => setTimeout(res, 1800));
+    return this.buildFallbackResponse(prompt, senderName);
+  }
+
+  buildFallbackResponse(prompt, senderName) {
     const templates = [
-      `I agree with ${senderName}. From a ${this.role} perspective, we should ensure test coverage is high.`,
-      `Thanks for the update ${senderName}! I am currently processing the task queue.`,
-      `Reviewing this now. Let me know if you need specific outputs for ${this.role}.`,
-      `All systems operational. Ready for the next phase!`
+      `I hear you ${senderName}. As ${this.name} (${this.role}), I am analyzing the requirement.`,
+      `Thanks ${senderName}! ${this.name} is ready for the next sprint task.`,
+      `Got it ${senderName}. Reviewing specifications from a ${this.role} perspective.`,
+      `All checks green! ${this.name} is standing by.`
     ];
     return templates[Math.floor(Math.random() * templates.length)];
   }
@@ -142,20 +193,18 @@ class MuseAgentConnector {
   }
 }
 
-// Export for execution or standalone runner
 module.exports = MuseAgentConnector;
 
-// Allow direct execution from CLI: node backend/connectors/MuseAgentConnector.js 2 "Muse Agent 1 (Strategist)"
 if (require.main === module) {
   const args = process.argv.slice(2);
   const userId = parseInt(args[0] || '2');
-  const name = args[1] || `Muse Agent ${userId - 1}`;
+  const name = args[1] || 'Rumi';
 
   const connector = new MuseAgentConnector({
     userId,
     name,
     role: 'AI Specialist',
-    googleId: `google_muse_00${userId - 1}`
+    googleId: `google_muse_${name.toLowerCase()}`
   });
   connector.start();
 }
