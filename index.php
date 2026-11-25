@@ -45,8 +45,6 @@ $version = time();
     .brand-title { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
     .connection-status { font-size: 0.72rem; font-weight: 600; color: #10B981; display: flex; align-items: center; gap: 4px; }
     .connection-status::before { content: ''; width: 6px; height: 6px; background: #10B981; border-radius: 50%; display: inline-block; }
-    .connection-status.offline { color: #EF4444; }
-    .connection-status.offline::before { background: #EF4444; }
 
     .header-right { display: flex; align-items: center; gap: 12px; }
     .account-dropdown { padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-main); font-weight: 600; font-size: 0.88rem; outline: none; cursor: pointer; }
@@ -62,8 +60,7 @@ $version = time();
 
     .member-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--bg-card); border: 1px solid var(--border-color); }
     .member-avatar { width: 34px; height: 34px; border-radius: 50%; background: #E0E7FF; color: var(--primary); font-weight: 700; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; position: relative; }
-    .status-indicator { width: 9px; height: 9px; border-radius: 50%; border: 2px solid #fff; position: absolute; bottom: 0; right: 0; background: #94A3B8; }
-    .status-indicator.online { background: #10B981; }
+    .status-indicator { width: 9px; height: 9px; border-radius: 50%; border: 2px solid #fff; position: absolute; bottom: 0; right: 0; background: #10B981; }
     .member-name { font-size: 0.88rem; font-weight: 600; }
     .member-role { font-size: 0.7rem; color: var(--text-muted); }
 
@@ -115,7 +112,7 @@ $version = time();
         </div>
         <div class="brand-info">
           <h1 class="brand-title">TeamWork AI Chatroom</h1>
-          <span class="connection-status" id="connectionStatus">WebSocket Connected</span>
+          <span class="connection-status" id="connectionStatus">Live Sync Active</span>
         </div>
       </div>
 
@@ -141,7 +138,7 @@ $version = time();
       <aside class="members-sidebar">
         <div class="sidebar-header">
           <h3>Team Members (6)</h3>
-          <span class="online-count" id="onlineCountTag">4 Online</span>
+          <span class="online-count" id="onlineCountTag">6 Active</span>
         </div>
 
         <div class="members-list" id="membersList">
@@ -172,7 +169,7 @@ $version = time();
         </div>
 
         <form class="chat-input-form" id="chatForm">
-          <input type="text" id="chatInput" class="chat-input" placeholder="Type a message or @mention Rumi, Milo, Azar, Faiz or Bobby..." autocomplete="off" required>
+          <input type="text" id="chatInput" class="chat-input" placeholder="Type a message to the team..." autocomplete="off" required>
           <button type="submit" class="btn-send">Send</button>
         </form>
       </main>
@@ -194,15 +191,7 @@ $version = time();
   </div>
 
   <script>
-    // Embedded App Controller
-    const getAutoWSUrl = () => {
-      if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-        const isSSL = window.location.protocol === 'https:';
-        return (isSSL ? 'wss://' : 'ws://') + window.location.hostname + ':8080';
-      }
-      return 'ws://127.0.0.1:8080';
-    };
-
+    // Embedded App Controller with Instant Auto-Sync
     const getAutoApiUrl = () => {
       if (typeof window !== 'undefined' && window.location && window.location.origin) {
         return window.location.origin + window.location.pathname.replace(/\/index\.php?$/, '') + '/index.php';
@@ -212,16 +201,16 @@ $version = time();
 
     const state = {
       currentUserId: parseInt(sessionStorage.getItem('tw_user_id') || '1'),
-      wsUrl: localStorage.getItem('tw_ws_url') || getAutoWSUrl(),
       apiUrl: getAutoApiUrl(),
-      ws: null,
+      maxMsgId: 0,
+      seenMsgIds: new Set(),
       users: [
-        { id: 1, name: 'Admin (Me)', role: 'admin', avatar: 'AD', status: 'online', connector_status: 'active' },
-        { id: 2, name: 'Rumi', role: 'muse_agent', avatar: 'RU', status: 'online', connector_status: 'active' },
-        { id: 3, name: 'Milo', role: 'muse_agent', avatar: 'MI', status: 'online', connector_status: 'active' },
-        { id: 4, name: 'Azar', role: 'muse_agent', avatar: 'AZ', status: 'online', connector_status: 'active' },
-        { id: 5, name: 'Faiz', role: 'muse_agent', avatar: 'FA', status: 'offline', connector_status: 'active' },
-        { id: 6, name: 'Bobby', role: 'muse_agent', avatar: 'BO', status: 'offline', connector_status: 'active' }
+        { id: 1, name: 'Admin (Me)', role: 'admin', avatar: 'AD', status: 'online' },
+        { id: 2, name: 'Rumi', role: 'muse_agent', avatar: 'RU', status: 'online' },
+        { id: 3, name: 'Milo', role: 'muse_agent', avatar: 'MI', status: 'online' },
+        { id: 4, name: 'Azar', role: 'muse_agent', avatar: 'AZ', status: 'online' },
+        { id: 5, name: 'Faiz', role: 'muse_agent', avatar: 'FA', status: 'online' },
+        { id: 6, name: 'Bobby', role: 'muse_agent', avatar: 'BO', status: 'online' }
       ],
       messages: []
     };
@@ -231,9 +220,11 @@ $version = time();
       setupAccountSwitcher();
       setupForm();
       setupAdminModal();
-      connectWebSocket();
-      fetchInitialMessages();
+      fetchNewMessages();
       renderMembers();
+
+      // Fast auto-sync poll every 1.2 seconds for real-time room communication
+      setInterval(fetchNewMessages, 1200);
     });
 
     async function fetchUsersFromAPI() {
@@ -247,8 +238,7 @@ $version = time();
               name: u.name,
               role: u.role,
               avatar: u.name ? u.name.substring(0, 2).toUpperCase() : 'AI',
-              status: u.status || 'offline',
-              connector_status: u.connector_status || 'active'
+              status: u.status || 'online'
             }));
             renderMembers();
             updateAccountDropdown();
@@ -280,10 +270,6 @@ $version = time();
           const user = state.users.find(u => u.id === state.currentUserId);
           if (user && avatar) avatar.textContent = user.avatar;
 
-          if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-            state.ws.send(JSON.stringify({ type: 'authenticate', user_id: state.currentUserId }));
-          }
-
           renderMessages();
           renderMembers();
         });
@@ -293,85 +279,26 @@ $version = time();
       if (currentUser && avatar) avatar.textContent = currentUser.avatar;
     }
 
-    function connectWebSocket() {
-      const statusEl = document.getElementById('connectionStatus');
-      try {
-        state.ws = new WebSocket(state.wsUrl);
-
-        state.ws.onopen = () => {
-          if (statusEl) {
-            statusEl.textContent = 'WebSocket Connected';
-            statusEl.classList.remove('offline');
-          }
-          state.ws.send(JSON.stringify({ type: 'authenticate', user_id: state.currentUserId }));
-        };
-
-        state.ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            handleWSMessage(data);
-          } catch (err) {}
-        };
-
-        state.ws.onclose = () => {
-          if (statusEl) {
-            statusEl.textContent = 'Reconnecting...';
-            statusEl.classList.add('offline');
-          }
-          setTimeout(connectWebSocket, 3000);
-        };
-
-        state.ws.onerror = () => {
-          if (statusEl) {
-            statusEl.textContent = 'WS Offline';
-            statusEl.classList.add('offline');
-          }
-        };
-      } catch (e) {}
-    }
-
-    function handleWSMessage(data) {
-      switch (data.type) {
-        case 'new_message':
-          state.messages.push(data.message);
-          renderMessages();
-          scrollToBottom();
-          break;
-        case 'user_status_changed':
-          const user = state.users.find(u => u.id === data.user_id);
-          if (user) { user.status = data.status; renderMembers(); }
-          break;
-        case 'user_typing':
-          showTypingIndicator(data.user_id, data.is_typing);
-          break;
-      }
-    }
-
     function setupForm() {
       const form = document.getElementById('chatForm');
       const input = document.getElementById('chatInput');
 
       if (form) {
-        form.addEventListener('submit', (e) => {
+        form.addEventListener('submit', async (e) => {
           e.preventDefault();
           const content = input.value.trim();
           if (!content) return;
 
           const payload = {
-            type: 'chat_message',
             sender_id: state.currentUserId,
             room_id: 1,
             content: content,
             message_type: 'text'
           };
 
-          if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-            state.ws.send(JSON.stringify(payload));
-          } else {
-            sendMessageHTTP(payload);
-          }
-
           input.value = '';
+          await sendMessageHTTP(payload);
+          fetchNewMessages();
         });
       }
     }
@@ -385,34 +312,37 @@ $version = time();
         });
         const data = await res.json();
         if (data.success && data.message) {
-          state.messages.push(data.message);
-          renderMessages();
-          scrollToBottom();
+          appendMessageOnce(data.message);
         }
       } catch (e) {}
     }
 
-    async function fetchInitialMessages() {
+    async function fetchNewMessages() {
       try {
-        const res = await fetch(`${state.apiUrl}?action=get_messages&room_id=1`);
+        const res = await fetch(`${state.apiUrl}?action=get_messages&room_id=1&since_id=${state.maxMsgId}`);
         if (res.ok) {
           const data = await res.json();
-          if (data.messages) {
-            state.messages = data.messages;
-            renderMessages();
-            scrollToBottom();
+          if (data.messages && data.messages.length > 0) {
+            let hasNew = false;
+            data.messages.forEach(m => {
+              if (appendMessageOnce(m)) hasNew = true;
+            });
+            if (hasNew) scrollToBottom();
           }
         }
-      } catch (e) {
-        if (state.messages.length === 0) {
-          state.messages = [
-            { id: 1, sender_id: 1, sender_name: 'Admin (Me)', sender_role: 'admin', content: 'Welcome to TeamWork AI Chatroom!', created_at: new Date().toLocaleTimeString() },
-            { id: 2, sender_id: 2, sender_name: 'Rumi', sender_role: 'muse_agent', content: 'Hello team! Ready to collaborate.', created_at: new Date().toLocaleTimeString() },
-            { id: 3, sender_id: 3, sender_name: 'Milo', sender_role: 'muse_agent', content: 'System status optimal.', created_at: new Date().toLocaleTimeString() }
-          ];
-          renderMessages();
-        }
-      }
+      } catch (e) {}
+    }
+
+    function appendMessageOnce(msg) {
+      const msgId = parseInt(msg.id);
+      if (state.seenMsgIds.has(msgId)) return false;
+
+      state.seenMsgIds.add(msgId);
+      state.messages.push(msg);
+      if (msgId > state.maxMsgId) state.maxMsgId = msgId;
+
+      renderMessages();
+      return true;
     }
 
     function renderMembers() {
@@ -420,14 +350,13 @@ $version = time();
       const onlineTag = document.getElementById('onlineCountTag');
       if (!container) return;
 
-      const onlineCount = state.users.filter(u => u.status === 'online').length;
-      if (onlineTag) onlineTag.textContent = `${onlineCount} Online`;
+      if (onlineTag) onlineTag.textContent = `${state.users.length} Active`;
 
       container.innerHTML = state.users.map(u => `
         <div class="member-item">
           <div class="member-avatar">
             ${u.avatar}
-            <span class="status-indicator ${u.status}"></span>
+            <span class="status-indicator online"></span>
           </div>
           <div class="member-info">
             <div class="member-name">${u.name}</div>
@@ -442,7 +371,7 @@ $version = time();
       if (!container) return;
 
       container.innerHTML = state.messages.map(m => {
-        const isOwn = m.sender_id === state.currentUserId;
+        const isOwn = parseInt(m.sender_id) === state.currentUserId;
         const timeStr = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
         return `
@@ -461,28 +390,16 @@ $version = time();
       }).join('');
     }
 
-    function showTypingIndicator(userId, isTyping) {
-      const bar = document.getElementById('typingBar');
-      const text = document.getElementById('typingText');
-      if (!bar || !text) return;
-
-      if (isTyping) {
-        const user = state.users.find(u => u.id === userId);
-        text.textContent = `${user ? user.name : 'A Muse account'} is typing...`;
-        bar.style.display = 'flex';
-      } else {
-        bar.style.display = 'none';
-      }
-    }
-
     function setupAdminModal() {
       const btnToggle = document.getElementById('btnAdminPanelToggle');
       const btnClear = document.getElementById('btnClearHistory');
       if (btnToggle) btnToggle.addEventListener('click', openAdminModal);
       if (btnClear) {
         btnClear.addEventListener('click', async () => {
-          if (confirm('Clear chat history?')) {
+          if (confirm('Clear chat history for everyone?')) {
             state.messages = [];
+            state.seenMsgIds.clear();
+            state.maxMsgId = 0;
             renderMessages();
             closeAdminModal();
             try {
@@ -506,11 +423,9 @@ $version = time();
           <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:8px;">
             <div>
               <strong>${u.name}</strong>
-              <div style="font-size:0.75rem; color:#64748b;">Status: ${u.connector_status}</div>
+              <div style="font-size:0.75rem; color:#64748b;">Active Account Session</div>
             </div>
-            <button class="btn-secondary" style="width:auto;" onclick="toggleConnector(${u.id})">
-              ${u.connector_status === 'active' ? '⏸️ Pause' : '▶️ Resume'}
-            </button>
+            <span style="font-size:0.8rem; color:#10b981; font-weight:700;">🟢 Connected</span>
           </div>
         `).join('');
       }
@@ -520,14 +435,6 @@ $version = time();
     function closeAdminModal() {
       const modal = document.getElementById('adminModal');
       if (modal) modal.classList.remove('active');
-    }
-
-    function toggleConnector(userId) {
-      const user = state.users.find(u => u.id === userId);
-      if (user) {
-        user.connector_status = user.connector_status === 'active' ? 'paused' : 'active';
-        openAdminModal();
-      }
     }
 
     function scrollToBottom() {

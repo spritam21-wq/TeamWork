@@ -25,20 +25,33 @@ switch ($action) {
 
     case 'get_messages':
         $roomId = (int)($_GET['room_id'] ?? 1);
+        $sinceId = (int)($_GET['since_id'] ?? 0);
         $limit = (int)($_GET['limit'] ?? 50);
 
-        $stmt = $pdo->prepare("
-            SELECT m.id, m.room_id, m.sender_id, m.content, m.message_type, m.created_at,
-                   u.name AS sender_name, u.avatar_url AS sender_avatar, u.role AS sender_role
-            FROM messages m
-            JOIN users u ON m.sender_id = u.id
-            WHERE m.room_id = :room_id
-            ORDER BY m.id ASC
-            LIMIT :limit
-        ");
-        $stmt->bindValue(':room_id', $roomId, PDO::PARAM_INT);
-        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-        $stmt->execute();
+        if ($sinceId > 0) {
+            $stmt = $pdo->prepare("
+                SELECT m.id, m.room_id, m.sender_id, m.content, m.message_type, m.created_at,
+                       u.name AS sender_name, u.avatar_url AS sender_avatar, u.role AS sender_role
+                FROM messages m
+                JOIN users u ON m.sender_id = u.id
+                WHERE m.room_id = :room_id AND m.id > :since_id
+                ORDER BY m.id ASC
+            ");
+            $stmt->execute([':room_id' => $roomId, ':since_id' => $sinceId]);
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT m.id, m.room_id, m.sender_id, m.content, m.message_type, m.created_at,
+                       u.name AS sender_name, u.avatar_url AS sender_avatar, u.role AS sender_role
+                FROM messages m
+                JOIN users u ON m.sender_id = u.id
+                WHERE m.room_id = :room_id
+                ORDER BY m.id ASC
+                LIMIT :limit
+            ");
+            $stmt->bindValue(':room_id', $roomId, PDO::PARAM_INT);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->execute();
+        }
 
         echo json_encode(['success' => true, 'messages' => $stmt->fetchAll()]);
         break;
