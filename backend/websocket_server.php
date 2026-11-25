@@ -1,13 +1,20 @@
 <?php
-// TeamWork Lightweight Standalone PHP WebSocket Server
+// TeamWork Standalone PHP WebSocket Server
 require_once __DIR__ . '/db.php';
 
 $host = WS_HOST;
 $port = WS_PORT;
 
-$server = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+$server = @socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+if (!$server) {
+    die("Failed to create socket\n");
+}
+
 socket_set_option($server, SOL_SOCKET, SO_REUSEADDR, 1);
-socket_bind($server, $host, $port);
+if (!@socket_bind($server, $host, $port)) {
+    die("Failed to bind socket to {$host}:{$port}\n");
+}
+
 socket_listen($server);
 
 echo "===========================================\n";
@@ -27,7 +34,7 @@ while (true) {
         continue;
     }
 
-    // New connection
+    // New incoming connection
     if (in_array($server, $read)) {
         $newSocket = socket_accept($server);
         $header = socket_read($newSocket, 1024);
@@ -49,7 +56,6 @@ while (true) {
         $bytes = @socket_recv($socket, $buffer, 4096, 0);
 
         if ($bytes === false || $bytes === 0) {
-            // Client disconnected
             handleDisconnect($socketId, $clients, $usersMap);
             continue;
         }
@@ -74,11 +80,14 @@ function handleClientMessage($socketId, $msg, &$clients, &$usersMap) {
                 $clients[$socketId]['user_id'] = $userId;
                 $usersMap[$socketId] = $userId;
 
-                // Update database user status to online
-                $stmt = $pdo->prepare("UPDATE users SET status = 'online' WHERE id = :id");
-                $stmt->execute([':id' => $userId]);
+                if ($pdo) {
+                    try {
+                        $stmt = $pdo->prepare("UPDATE users SET status = 'online' WHERE id = :id");
+                        $stmt->execute([':id' => $userId]);
+                    } catch (Exception $e) {}
+                }
 
-                // Broadcast online presence
+                // Broadcast presence update to all clients
                 broadcastJSON($clients, [
                     'type' => 'user_status_changed',
                     'user_id' => $userId,
@@ -96,34 +105,53 @@ function handleClientMessage($socketId, $msg, &$clients, &$usersMap) {
             $msgType = $msg['message_type'] ?? 'text';
 
             if ($senderId && !empty($content)) {
-                // Insert message into DB
-                $stmt = $pdo->prepare("INSERT INTO messages (room_id, sender_id, content, message_type) VALUES (:room_id, :sender_id, :content, :message_type)");
-                $stmt->execute([
-                    ':room_id' => $roomId,
-                    ':sender_id' => $senderId,
-                    ':content' => $content,
-                    ':message_type' => $msgType
-                ]);
-                $messageId = $pdo->lastInsertId();
+                $fullMessage = null;
 
-                // Retrieve inserted message with sender info
-                $stmtFetch = $pdo->prepare("
-                    SELECT m.id, m.room_id, m.sender_id, m.content, m.message_type, m.created_at,
-                           u.name AS sender_name, u.avatar_url AS sender_avatar, u.role AS sender_role
-                    FROM messages m
-                    JOIN users u ON m.sender_id = u.id
-                    WHERE m.id = :id
-                ");
-                $stmtFetch->execute([':id' => $messageId]);
-                $fullMessage = $stmtFetch->fetch();
+                if ($pdo) {
+                    try {
+                        // 1. Save to MySQL first
+                        $stmt = $pdo->prepare("INSERT INTO messages (room_id, sender_id, content, message_type) VALUES (:room_id, :sender_id, :content, :message_type)");
+                        $stmt->execute([
+                            ':room_id' => $roomId,
+                            ':sender_id' => $senderId,
+                            ':content' => $content,
+                            ':message_type' => $msgType
+                        ]);
+                        $messageId = $pdo->lastInsertId();
 
-                // Broadcast to all connected clients
+                        // 2. Retrieve saved message with full sender details
+                        $stmtFetch = $pdo->prepare("
+                            SELECT m.id, m.room_id, m.sender_id, m.content, m.message_type, m.created_at,
+                                   u.name AS sender_name, u.avatar_url AS sender_avatar, u.role AS sender_role
+                            FROM messages m
+                            JOIN users u ON m.sender_id = u.id
+                            WHERE m.id = :id
+                        ");
+                        $stmtFetch->execute([':id' => $messageId]);
+                        $fullMessage = $stmtFetch->fetch();
+                    } catch (Exception $e) {}
+                }
+
+                if (!$fullMessage) {
+                    $fullMessage = [
+                        'id' => time() * 1000 + rand(1, 999),
+                        'room_id' => $roomId,
+                        'sender_id' => $senderId,
+                        'sender_name' => 'Member #' . $senderId,
+                        'sender_role' => ($senderId === 1 ? 'admin' : 'muse_agent'),
+                        'content' => $content,
+                        'message_type' => $msgType,
+                        'created_at' => date('Y-m-d H:i:s')
+                    ];
+                }
+
+                // 3. Broadcast to ALL connected clients (including sender)
                 broadcastJSON($clients, [
                     'type' => 'new_message',
                     'message' => $fullMessage
                 ]);
 
-                echo "💬 Message #{$messageId} sent by User #{$senderId}: {$content}\n";
+                echo "💬 Message sent by User #{$senderId}: {$content}\n";
             }
             break;
 
@@ -148,11 +176,14 @@ function handleDisconnect($socketId, &$clients, &$usersMap) {
         unset($usersMap[$socketId]);
 
         if ($userId) {
-            // Check if user has no remaining active sockets
             if (!in_array($userId, $usersMap)) {
                 $pdo = Database::getConnection();
-                $stmt = $pdo->prepare("UPDATE users SET status = 'offline' WHERE id = :id");
-                $stmt->execute([':id' => $userId]);
+                if ($pdo) {
+                    try {
+                        $stmt = $pdo->prepare("UPDATE users SET status = 'offline' WHERE id = :id");
+                        $stmt->execute([':id' => $userId]);
+                    } catch (Exception $e) {}
+                }
 
                 broadcastJSON($clients, [
                     'type' => 'user_status_changed',
@@ -191,11 +222,11 @@ function performHandshake($received_header, $client_conn, $host, $port) {
                "WebSocket-Origin: {$host}\r\n" .
                "WebSocket-Location: ws://{$host}:{$port}\r\n" .
                "Sec-WebSocket-Accept:{$secAccept}\r\n\r\n";
-    socket_write($client_conn, $upgrade, strlen($upgrade));
+    @socket_write($client_conn, $upgrade, strlen($upgrade));
 }
 
 function unmask($text) {
-    $length = ord($text[1]) & 127;
+    $length = ord($text[1] ?? 0) & 127;
     if ($length == 126) {
         $masks = substr($text, 4, 4);
         $data = substr($text, 8);
