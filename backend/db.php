@@ -4,7 +4,7 @@ require_once __DIR__ . '/config.php';
 class Database {
     private static ?PDO $instance = null;
 
-    public static function getConnection(): PDO {
+    public static function getConnection(): ?PDO {
         if (self::$instance === null) {
             try {
                 $dsn = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=utf8mb4";
@@ -14,14 +14,8 @@ class Database {
                     PDO::ATTR_EMULATE_PREPARES => false,
                 ]);
             } catch (PDOException $e) {
-                // Return JSON error response if connected via HTTP
-                if (php_sapi_name() !== 'cli') {
-                    http_response_code(500);
-                    echo json_encode(['error' => 'Database Connection Error: ' . $e->getMessage()]);
-                    exit();
-                } else {
-                    die("Database Connection Error: " . $e->getMessage() . "\n");
-                }
+                // MySQL database connection failed, fallback to JSON storage engine
+                return null;
             }
         }
         return self::$instance;

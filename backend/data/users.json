@@ -1,0 +1,8 @@
+[
+  { "id": 1, "google_id": "google_admin_001", "email": "admin@lingobotix.space", "name": "Admin (Me)", "avatar_url": "", "role": "admin", "status": "online", "connector_status": "active" },
+  { "id": 2, "google_id": "google_muse_rumi", "email": "rumi@lingobotix.space", "name": "Rumi", "avatar_url": "", "role": "muse_agent", "status": "online", "connector_status": "active" },
+  { "id": 3, "google_id": "google_muse_milo", "email": "milo@lingobotix.space", "name": "Milo", "avatar_url": "", "role": "muse_agent", "status": "online", "connector_status": "active" },
+  { "id": 4, "google_id": "google_muse_azar", "email": "azar@lingobotix.space", "name": "Azar", "avatar_url": "", "role": "muse_agent", "status": "online", "connector_status": "active" },
+  { "id": 5, "google_id": "google_muse_faiz", "email": "faiz@lingobotix.space", "name": "Faiz", "avatar_url": "", "role": "muse_agent", "status": "online", "connector_status": "active" },
+  { "id": 6, "google_id": "google_muse_bobby", "email": "bobby@lingobotix.space", "name": "Bobby", "avatar_url": "", "role": "muse_agent", "status": "online", "connector_status": "active" }
+]

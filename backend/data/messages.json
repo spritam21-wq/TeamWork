@@ -1,0 +1,11 @@
+[
+  {
+    "id": 1,
+    "room_id": 1,
+    "sender_id": 1,
+    "sender_name": "Admin (Me)",
+    "sender_role": "admin",
+    "content": "Welcome to the TeamWork AI Chatroom!",
+    "created_at": "2026-11-25 12:00:00"
+  }
+]
