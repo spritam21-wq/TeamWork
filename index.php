@@ -196,7 +196,7 @@ $version = time();
   </div>
 
   <script>
-    // Instant Cross-Window Sync Engine
+    // Bulletproof Real-Time Synchronization Engine
     const broadcast = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('teamwork_room_sync') : null;
 
     const state = {
@@ -327,7 +327,7 @@ $version = time();
           const content = input.value.trim();
           if (!content) return;
 
-          input.value = ''; // Clear input field immediately
+          input.value = ''; // Immediately clear input field
 
           // 1. INSTANT LOCAL RENDERING (0ms delay)
           const currentUser = state.users.find(u => u.id === state.currentUserId) || {
@@ -392,6 +392,7 @@ $version = time();
     }
 
     function appendMessageOnce(msg, save = true) {
+      if (!msg) return false;
       const msgId = msg.id ? msg.id.toString() : 'msg_' + Date.now();
       if (state.seenMsgIds.has(msgId)) return false;
 
@@ -417,11 +418,11 @@ $version = time();
       container.innerHTML = state.users.map(u => `
         <div class="member-item">
           <div class="member-avatar">
-            ${u.avatar}
+            ${escapeHTML(u.avatar)}
             <span class="status-indicator online"></span>
           </div>
           <div class="member-info">
-            <div class="member-name">${u.name}</div>
+            <div class="member-name">${escapeHTML(u.name)}</div>
             <div class="member-role">${u.role === 'admin' ? '👑 Admin' : '🤖 Muse Account'}</div>
           </div>
         </div>
@@ -432,24 +433,32 @@ $version = time();
       const container = document.getElementById('messagesContainer');
       if (!container) return;
 
-      container.innerHTML = state.messages.map(m => {
-        const isOwn = parseInt(m.sender_id) === state.currentUserId;
-        const timeStr = m.created_at ? (m.created_at.length > 10 ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : m.created_at) : '';
+      try {
+        container.innerHTML = state.messages.map(m => {
+          if (!m) return '';
+          const isOwn = parseInt(m.sender_id) === state.currentUserId;
+          const senderName = m.sender_name || (isOwn ? 'Me' : 'User');
+          const senderRole = m.sender_role || 'muse_agent';
+          const contentText = m.content || '';
+          const timeStr = m.created_at ? (typeof m.created_at === 'string' && m.created_at.length > 10 ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : m.created_at) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-        return `
-          <div class="message-item ${isOwn ? 'own' : ''}">
-            <div class="msg-avatar">${m.sender_name ? m.sender_name.substring(0, 2).toUpperCase() : 'AI'}</div>
-            <div class="msg-content-wrapper">
-              <div class="msg-meta">
-                <span class="msg-sender">${m.sender_name || 'User'}</span>
-                <span class="msg-role-badge ${m.sender_role}">${m.sender_role === 'admin' ? 'Admin' : 'Muse'}</span>
-                <span class="msg-time">${timeStr}</span>
+          return `
+            <div class="message-item ${isOwn ? 'own' : ''}">
+              <div class="msg-avatar">${escapeHTML(senderName.substring(0, 2).toUpperCase())}</div>
+              <div class="msg-content-wrapper">
+                <div class="msg-meta">
+                  <span class="msg-sender">${escapeHTML(senderName)}</span>
+                  <span class="msg-role-badge ${escapeHTML(senderRole)}">${senderRole === 'admin' ? 'Admin' : 'Muse'}</span>
+                  <span class="msg-time">${escapeHTML(timeStr)}</span>
+                </div>
+                <div class="msg-bubble">${escapeHTML(contentText)}</div>
               </div>
-              <div class="msg-bubble">${escapeHTML(m.content)}</div>
             </div>
-          </div>
-        `;
-      }).join('');
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Error rendering messages:', err);
+      }
     }
 
     function setupAdminModal() {
@@ -486,7 +495,7 @@ $version = time();
         table.innerHTML = museUsers.map(u => `
           <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:8px;">
             <div>
-              <strong>${u.name}</strong>
+              <strong>${escapeHTML(u.name)}</strong>
               <div style="font-size:0.75rem; color:#64748b;">Active Account Session</div>
             </div>
             <span style="font-size:0.8rem; color:#10b981; font-weight:700;">🟢 Connected</span>
@@ -507,7 +516,9 @@ $version = time();
     }
 
     function escapeHTML(str) {
-      return str.replace(/[&<>'"]/g,
+      if (str === null || str === undefined) return '';
+      const stringVal = typeof str === 'string' ? str : String(str);
+      return stringVal.replace(/[&<>'"]/g,
         tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
       );
     }
