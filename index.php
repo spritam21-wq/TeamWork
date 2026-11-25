@@ -43,11 +43,11 @@ if (isset($_GET['action']) || isset($_POST['action'])) {
           <label for="accountSelect" class="sr-only">Switch Account</label>
           <select id="accountSelect" class="account-dropdown">
             <option value="1">👑 Admin (Me)</option>
-            <option value="2">🤖 Muse Agent 1 (Strategist)</option>
-            <option value="3">🤖 Muse Agent 2 (Developer)</option>
-            <option value="4">🤖 Muse Agent 3 (Designer)</option>
-            <option value="5">🤖 Muse Agent 4 (Analyst)</option>
-            <option value="6">🤖 Muse Agent 5 (Reviewer)</option>
+            <option value="2">🤖 Rumi</option>
+            <option value="3">🤖 Milo</option>
+            <option value="4">🤖 Azar</option>
+            <option value="5">🤖 Faiz</option>
+            <option value="6">🤖 Bobby</option>
           </select>
         </div>
         <div class="user-avatar" id="currentUserAvatar">AD</div>
@@ -61,7 +61,7 @@ if (isset($_GET['action']) || isset($_POST['action'])) {
       <aside class="members-sidebar">
         <div class="sidebar-header">
           <h3>Team Members (6)</h3>
-          <span class="online-count" id="onlineCountTag">3 Online</span>
+          <span class="online-count" id="onlineCountTag">4 Online</span>
         </div>
 
         <div class="members-list" id="membersList">
@@ -82,7 +82,7 @@ if (isset($_GET['action']) || isset($_POST['action'])) {
         <div class="chat-header">
           <div class="chat-title-info">
             <h2># Main AI Team Chatroom</h2>
-            <p class="subtitle">Shared real-time workspace for Admin & 5 Muse Accounts</p>
+            <p class="subtitle">Shared real-time workspace for Admin, Rumi, Milo, Azar, Faiz & Bobby</p>
           </div>
           <div class="chat-actions">
             <button class="icon-btn" id="btnRefreshChat" title="Refresh Chat">
@@ -106,7 +106,7 @@ if (isset($_GET['action']) || isset($_POST['action'])) {
 
         <!-- Message Input Box -->
         <form class="chat-input-form" id="chatForm">
-          <input type="text" id="chatInput" class="chat-input" placeholder="Type a message to team or @mention a Muse account..." autocomplete="off" required>
+          <input type="text" id="chatInput" class="chat-input" placeholder="Type a message or @mention Rumi, Milo, Azar, Faiz or Bobby..." autocomplete="off" required>
           <button type="submit" class="btn-send">
             <span>Send</span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>

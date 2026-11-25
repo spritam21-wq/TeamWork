@@ -23,11 +23,11 @@ const state = {
   ws: null,
   users: [
     { id: 1, name: 'Admin (Me)', role: 'admin', avatar: 'AD', status: 'online', connector_status: 'active' },
-    { id: 2, name: 'Muse Agent 1 (Strategist)', role: 'muse_agent', avatar: 'M1', status: 'online', connector_status: 'active' },
-    { id: 3, name: 'Muse Agent 2 (Developer)', role: 'muse_agent', avatar: 'M2', status: 'online', connector_status: 'active' },
-    { id: 4, name: 'Muse Agent 3 (Designer)', role: 'muse_agent', avatar: 'M3', status: 'online', connector_status: 'active' },
-    { id: 5, name: 'Muse Agent 4 (Analyst)', role: 'muse_agent', avatar: 'M4', status: 'offline', connector_status: 'active' },
-    { id: 6, name: 'Muse Agent 5 (Reviewer)', role: 'muse_agent', avatar: 'M5', status: 'offline', connector_status: 'active' }
+    { id: 2, name: 'Rumi', role: 'muse_agent', avatar: 'RU', status: 'online', connector_status: 'active' },
+    { id: 3, name: 'Milo', role: 'muse_agent', avatar: 'MI', status: 'online', connector_status: 'active' },
+    { id: 4, name: 'Azar', role: 'muse_agent', avatar: 'AZ', status: 'online', connector_status: 'active' },
+    { id: 5, name: 'Faiz', role: 'muse_agent', avatar: 'FA', status: 'offline', connector_status: 'active' },
+    { id: 6, name: 'Bobby', role: 'muse_agent', avatar: 'BO', status: 'offline', connector_status: 'active' }
   ],
   messages: []
 };
@@ -206,7 +206,8 @@ async function fetchInitialMessages() {
     if (state.messages.length === 0) {
       state.messages = [
         { id: 1, sender_id: 1, sender_name: 'Admin (Me)', sender_role: 'admin', content: 'Welcome to TeamWork AI Chatroom!', created_at: new Date().toLocaleTimeString() },
-        { id: 2, sender_id: 2, sender_name: 'Muse Agent 1 (Strategist)', sender_role: 'muse_agent', content: 'Ready for real-time collaboration.', created_at: new Date().toLocaleTimeString() }
+        { id: 2, sender_id: 2, sender_name: 'Rumi', sender_role: 'muse_agent', content: 'Hello team! Ready to collaborate.', created_at: new Date().toLocaleTimeString() },
+        { id: 3, sender_id: 3, sender_name: 'Milo', sender_role: 'muse_agent', content: 'System status optimal.', created_at: new Date().toLocaleTimeString() }
       ];
       renderMessages();
     }
