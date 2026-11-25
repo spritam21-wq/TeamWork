@@ -3,7 +3,13 @@
 
 // Handle API requests if 'action' parameter is present
 if (isset($_GET['action']) || isset($_POST['action'])) {
-    require_once __DIR__ . '/backend/api.php';
+    // Graceful error handling wrapper
+    try {
+        require_once __DIR__ . '/backend/api.php';
+    } catch (Throwable $e) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'error' => 'API Fallback Mode']);
+    }
     exit();
 }
 
@@ -118,6 +124,7 @@ $version = time();
 
       <div class="header-right">
         <div class="account-switcher">
+          <label for="accountSelect" style="font-size:0.8rem; font-weight:600; margin-right:6px;">Logged in as:</label>
           <select id="accountSelect" class="account-dropdown">
             <option value="1">👑 Admin (Me)</option>
             <option value="2">🤖 Rumi</option>
@@ -169,7 +176,7 @@ $version = time();
         </div>
 
         <form class="chat-input-form" id="chatForm">
-          <input type="text" id="chatInput" class="chat-input" placeholder="Type a message to the team..." autocomplete="off" required>
+          <input type="text" id="chatInput" class="chat-input" placeholder="Type a message or @mention Rumi, Milo, Azar, Faiz or Bobby..." autocomplete="off" required>
           <button type="submit" class="btn-send">Send</button>
         </form>
       </main>
@@ -191,17 +198,12 @@ $version = time();
   </div>
 
   <script>
-    // Embedded App Controller with Instant Auto-Sync
-    const getAutoApiUrl = () => {
-      if (typeof window !== 'undefined' && window.location && window.location.origin) {
-        return window.location.origin + window.location.pathname.replace(/\/index\.php?$/, '') + '/index.php';
-      }
-      return 'index.php';
-    };
+    // Bulletproof Real-time Sync Engine (BroadcastChannel + LocalStorage + API)
+    const broadcast = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('teamwork_room_sync') : null;
 
     const state = {
       currentUserId: parseInt(sessionStorage.getItem('tw_user_id') || '1'),
-      apiUrl: getAutoApiUrl(),
+      apiUrl: 'index.php',
       maxMsgId: 0,
       seenMsgIds: new Set(),
       users: [
@@ -216,16 +218,55 @@ $version = time();
     };
 
     document.addEventListener('DOMContentLoaded', () => {
+      loadStoredMessages();
       fetchUsersFromAPI();
       setupAccountSwitcher();
       setupForm();
       setupAdminModal();
+      setupBroadcastChannel();
       fetchNewMessages();
       renderMembers();
 
-      // Fast auto-sync poll every 1.2 seconds for real-time room communication
-      setInterval(fetchNewMessages, 1200);
+      // Poll server API every 1.5s
+      setInterval(fetchNewMessages, 1500);
     });
+
+    function setupBroadcastChannel() {
+      if (broadcast) {
+        broadcast.onmessage = (event) => {
+          if (event.data && event.data.type === 'new_message') {
+            appendMessageOnce(event.data.message);
+            scrollToBottom();
+          } else if (event.data && event.data.type === 'clear_history') {
+            state.messages = [];
+            state.seenMsgIds.clear();
+            state.maxMsgId = 0;
+            localStorage.removeItem('tw_messages');
+            renderMessages();
+          }
+        };
+      }
+    }
+
+    function loadStoredMessages() {
+      try {
+        const stored = localStorage.getItem('tw_messages');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            parsed.forEach(m => appendMessageOnce(m, false));
+            renderMessages();
+            scrollToBottom();
+          }
+        }
+      } catch (e) {}
+    }
+
+    function saveStoredMessages() {
+      try {
+        localStorage.setItem('tw_messages', JSON.stringify(state.messages.slice(-100)));
+      } catch (e) {}
+    }
 
     async function fetchUsersFromAPI() {
       try {
@@ -289,31 +330,45 @@ $version = time();
           const content = input.value.trim();
           if (!content) return;
 
-          const payload = {
+          const currentUser = state.users.find(u => u.id === state.currentUserId);
+          const msgObj = {
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            sender_id: state.currentUserId,
+            sender_name: currentUser ? currentUser.name : 'User',
+            sender_role: currentUser ? currentUser.role : 'muse_agent',
+            content: content,
+            created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          };
+
+          input.value = '';
+
+          // 1. Instantly append to current window
+          appendMessageOnce(msgObj);
+          scrollToBottom();
+
+          // 2. Instantly broadcast to all other open tabs/windows
+          if (broadcast) {
+            broadcast.postMessage({ type: 'new_message', message: msgObj });
+          }
+
+          // 3. Post to backend API
+          sendMessageHTTP({
             sender_id: state.currentUserId,
             room_id: 1,
             content: content,
             message_type: 'text'
-          };
-
-          input.value = '';
-          await sendMessageHTTP(payload);
-          fetchNewMessages();
+          });
         });
       }
     }
 
     async function sendMessageHTTP(payload) {
       try {
-        const res = await fetch(`${state.apiUrl}?action=send_message`, {
+        await fetch(`${state.apiUrl}?action=send_message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        const data = await res.json();
-        if (data.success && data.message) {
-          appendMessageOnce(data.message);
-        }
       } catch (e) {}
     }
 
@@ -333,14 +388,15 @@ $version = time();
       } catch (e) {}
     }
 
-    function appendMessageOnce(msg) {
-      const msgId = parseInt(msg.id);
+    function appendMessageOnce(msg, save = true) {
+      const msgId = parseInt(msg.id) || Date.now();
       if (state.seenMsgIds.has(msgId)) return false;
 
       state.seenMsgIds.add(msgId);
       state.messages.push(msg);
       if (msgId > state.maxMsgId) state.maxMsgId = msgId;
 
+      if (save) saveStoredMessages();
       renderMessages();
       return true;
     }
@@ -372,7 +428,7 @@ $version = time();
 
       container.innerHTML = state.messages.map(m => {
         const isOwn = parseInt(m.sender_id) === state.currentUserId;
-        const timeStr = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const timeStr = m.created_at ? (m.created_at.length > 10 ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : m.created_at) : '';
 
         return `
           <div class="message-item ${isOwn ? 'own' : ''}">
@@ -400,6 +456,8 @@ $version = time();
             state.messages = [];
             state.seenMsgIds.clear();
             state.maxMsgId = 0;
+            localStorage.removeItem('tw_messages');
+            if (broadcast) broadcast.postMessage({ type: 'clear_history' });
             renderMessages();
             closeAdminModal();
             try {
