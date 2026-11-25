@@ -17,7 +17,7 @@ const getAutoApiUrl = () => {
 };
 
 const state = {
-  currentUserId: 1, // Default Admin
+  currentUserId: parseInt(sessionStorage.getItem('tw_user_id') || '1'), // Default Admin or Tab Session
   wsUrl: localStorage.getItem('tw_ws_url') || getAutoWSUrl(),
   apiUrl: localStorage.getItem('tw_api_url') || getAutoApiUrl(),
   ws: null,
@@ -50,21 +50,32 @@ function setupAccountSwitcher() {
   const avatar = document.getElementById('currentUserAvatar');
 
   if (select) {
+    select.value = state.currentUserId.toString();
     select.addEventListener('change', (e) => {
       state.currentUserId = parseInt(e.target.value);
+      sessionStorage.setItem('tw_user_id', state.currentUserId);
+
       const user = state.users.find(u => u.id === state.currentUserId);
       if (user && avatar) {
         avatar.textContent = user.avatar;
       }
-      // Re-authenticate WS connection with new user identity
+
+      // Re-authenticate WebSocket with newly logged in user identity
       if (state.ws && state.ws.readyState === WebSocket.OPEN) {
         state.ws.send(JSON.stringify({
           type: 'authenticate',
           user_id: state.currentUserId
         }));
       }
+
       renderMessages();
+      renderMembers();
     });
+  }
+
+  const currentUser = state.users.find(u => u.id === state.currentUserId);
+  if (currentUser && avatar) {
+    avatar.textContent = currentUser.avatar;
   }
 }
 
