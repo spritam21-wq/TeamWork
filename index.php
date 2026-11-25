@@ -70,7 +70,7 @@ $version = time();
       <!-- Members Sidebar (6 Accounts) -->
       <aside class="members-sidebar">
         <div class="sidebar-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-          <h3 style="margin:0;">Team Members</h3>
+          <h3 style="margin:0;">Team Members (6)</h3>
           <span class="online-count" id="onlineCountTag" style="background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700;">4 Online</span>
         </div>
 
