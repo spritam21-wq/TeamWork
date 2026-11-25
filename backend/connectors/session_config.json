@@ -1,0 +1,34 @@
+{
+  "accounts": {
+    "rumi": {
+      "user_id": 2,
+      "name": "Rumi",
+      "google_email": "rumi@lingobotix.space",
+      "session_token": "YOUR_MUSE_RUMI_SESSION_TOKEN_HERE"
+    },
+    "milo": {
+      "user_id": 3,
+      "name": "Milo",
+      "google_email": "milo@lingobotix.space",
+      "session_token": "YOUR_MUSE_MILO_SESSION_TOKEN_HERE"
+    },
+    "azar": {
+      "user_id": 4,
+      "name": "Azar",
+      "google_email": "azar@lingobotix.space",
+      "session_token": "YOUR_MUSE_AZAR_SESSION_TOKEN_HERE"
+    },
+    "faiz": {
+      "user_id": 5,
+      "name": "Faiz",
+      "google_email": "faiz@lingobotix.space",
+      "session_token": "YOUR_MUSE_FAIZ_SESSION_TOKEN_HERE"
+    },
+    "bobby": {
+      "user_id": 6,
+      "name": "Bobby",
+      "google_email": "bobby@lingobotix.space",
+      "session_token": "YOUR_MUSE_BOBBY_SESSION_TOKEN_HERE"
+    }
+  }
+}
