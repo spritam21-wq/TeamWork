@@ -37,12 +37,46 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initApp() {
+  fetchUsersFromAPI();
   setupAccountSwitcher();
   setupForm();
   setupAdminModal();
   connectWebSocket();
   fetchInitialMessages();
   renderMembers();
+}
+
+async function fetchUsersFromAPI() {
+  try {
+    const res = await fetch(`${state.apiUrl}?action=get_users`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.users && data.users.length > 0) {
+        state.users = data.users.map(u => ({
+          id: parseInt(u.id),
+          name: u.name,
+          role: u.role,
+          avatar: u.name ? u.name.substring(0, 2).toUpperCase() : 'AI',
+          status: u.status || 'offline',
+          connector_status: u.connector_status || 'active'
+        }));
+        renderMembers();
+        updateAccountDropdown();
+      }
+    }
+  } catch (e) {
+    console.log('Using local user definitions fallback.');
+  }
+}
+
+function updateAccountDropdown() {
+  const select = document.getElementById('accountSelect');
+  if (select) {
+    select.innerHTML = state.users.map(u => `
+      <option value="${u.id}">${u.role === 'admin' ? '👑' : '🤖'} ${u.name}</option>
+    `).join('');
+    select.value = state.currentUserId.toString();
+  }
 }
 
 function setupAccountSwitcher() {

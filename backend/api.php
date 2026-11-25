@@ -6,6 +6,17 @@ header('Content-Type: application/json');
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $pdo = Database::getConnection();
 
+// Auto-migrate user names to Rumi, Milo, Azar, Faiz, Bobby if old names exist
+try {
+    $pdo->exec("UPDATE users SET name = 'Rumi' WHERE id = 2");
+    $pdo->exec("UPDATE users SET name = 'Milo' WHERE id = 3");
+    $pdo->exec("UPDATE users SET name = 'Azar' WHERE id = 4");
+    $pdo->exec("UPDATE users SET name = 'Faiz' WHERE id = 5");
+    $pdo->exec("UPDATE users SET name = 'Bobby' WHERE id = 6");
+} catch (Exception $e) {
+    // Migration check silent fallback
+}
+
 switch ($action) {
     case 'get_users':
         $stmt = $pdo->query("SELECT u.id, u.google_id, u.email, u.name, u.avatar_url, u.role, u.status, c.status AS connector_status, c.last_ping FROM users u LEFT JOIN connectors c ON u.id = c.user_id ORDER BY u.id ASC");
@@ -61,7 +72,7 @@ switch ($action) {
             JOIN users u ON m.sender_id = u.id
             WHERE m.id = :id
         ");
-        $stmtFetch->execute([':id' => messageId]);
+        $stmtFetch->execute([':id' => $messageId]);
         $msgData = $stmtFetch->fetch();
 
         echo json_encode(['success' => true, 'message' => $msgData]);
