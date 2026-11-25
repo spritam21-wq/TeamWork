@@ -1,9 +1,25 @@
 // TeamWork Real-Time AI Chatroom Client
 
+const getAutoWSUrl = () => {
+  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+    const isSSL = window.location.protocol === 'https:';
+    const host = window.location.hostname;
+    return (isSSL ? 'wss://' : 'ws://') + host + ':8080';
+  }
+  return 'ws://127.0.0.1:8080';
+};
+
+const getAutoApiUrl = () => {
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    return window.location.origin + window.location.pathname.replace(/\/index\.html?$/, '') + '/index.php';
+  }
+  return 'http://127.0.0.1/TeamWork/index.php';
+};
+
 const state = {
   currentUserId: 1, // Default Admin
-  wsUrl: 'ws://127.0.0.1:8080',
-  apiUrl: 'http://127.0.0.1/TeamWork/backend/api.php', // REST API endpoint
+  wsUrl: localStorage.getItem('tw_ws_url') || getAutoWSUrl(),
+  apiUrl: localStorage.getItem('tw_api_url') || getAutoApiUrl(),
   ws: null,
   users: [
     { id: 1, name: 'Admin (Me)', role: 'admin', avatar: 'AD', status: 'online', connector_status: 'active' },
@@ -58,7 +74,7 @@ function connectWebSocket() {
     state.ws = new WebSocket(state.wsUrl);
 
     state.ws.onopen = () => {
-      console.log('Connected to TeamWork WebSocket server');
+      console.log('Connected to TeamWork WebSocket server:', state.wsUrl);
       if (statusEl) {
         statusEl.textContent = 'WebSocket Connected';
         statusEl.classList.remove('offline');
