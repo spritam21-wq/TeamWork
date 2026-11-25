@@ -1,49 +1,78 @@
 // TeamWork Real-Time AI Chatroom Client
 
-const getAutoWSUrl = () => {
-  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-    const isSSL = window.location.protocol === 'https:';
-    const host = window.location.hostname;
-    return (isSSL ? 'wss://' : 'ws://') + host + ':8080';
-  }
-  return 'ws://127.0.0.1:8080';
-};
+const broadcast = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('teamwork_room_sync') : null;
 
 const getAutoApiUrl = () => {
   if (typeof window !== 'undefined' && window.location && window.location.origin) {
-    return window.location.origin + window.location.pathname.replace(/\/index\.html?$/, '') + '/index.php';
+    return window.location.origin + window.location.pathname.replace(/\/index\.html?$/, '').replace(/\/index\.php?$/, '') + '/index.php';
   }
-  return 'http://127.0.0.1/TeamWork/index.php';
+  return 'index.php';
 };
 
 const state = {
-  currentUserId: parseInt(sessionStorage.getItem('tw_user_id') || '1'), // Default Admin or Tab Session
-  wsUrl: localStorage.getItem('tw_ws_url') || getAutoWSUrl(),
-  apiUrl: localStorage.getItem('tw_api_url') || getAutoApiUrl(),
-  ws: null,
+  currentUserId: parseInt(sessionStorage.getItem('tw_user_id') || '1'),
+  apiUrl: getAutoApiUrl(),
+  maxMsgId: 0,
+  seenMsgIds: new Set(),
   users: [
-    { id: 1, name: 'Admin (Me)', role: 'admin', avatar: 'AD', status: 'online', connector_status: 'active' },
-    { id: 2, name: 'Rumi', role: 'muse_agent', avatar: 'RU', status: 'online', connector_status: 'active' },
-    { id: 3, name: 'Milo', role: 'muse_agent', avatar: 'MI', status: 'online', connector_status: 'active' },
-    { id: 4, name: 'Azar', role: 'muse_agent', avatar: 'AZ', status: 'online', connector_status: 'active' },
-    { id: 5, name: 'Faiz', role: 'muse_agent', avatar: 'FA', status: 'offline', connector_status: 'active' },
-    { id: 6, name: 'Bobby', role: 'muse_agent', avatar: 'BO', status: 'offline', connector_status: 'active' }
+    { id: 1, name: 'Admin (Me)', role: 'admin', avatar: 'AD', status: 'online' },
+    { id: 2, name: 'Rumi', role: 'muse_agent', avatar: 'RU', status: 'online' },
+    { id: 3, name: 'Milo', role: 'muse_agent', avatar: 'MI', status: 'online' },
+    { id: 4, name: 'Azar', role: 'muse_agent', avatar: 'AZ', status: 'online' },
+    { id: 5, name: 'Faiz', role: 'muse_agent', avatar: 'FA', status: 'online' },
+    { id: 6, name: 'Bobby', role: 'muse_agent', avatar: 'BO', status: 'online' }
   ],
   messages: []
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  initApp();
-});
-
-function initApp() {
+  loadStoredMessages();
   fetchUsersFromAPI();
   setupAccountSwitcher();
   setupForm();
   setupAdminModal();
-  connectWebSocket();
-  fetchInitialMessages();
+  setupBroadcastChannel();
+  fetchNewMessages();
   renderMembers();
+
+  setInterval(fetchNewMessages, 1500);
+});
+
+function setupBroadcastChannel() {
+  if (broadcast) {
+    broadcast.onmessage = (event) => {
+      if (event.data && event.data.type === 'new_message') {
+        appendMessageOnce(event.data.message);
+        scrollToBottom();
+      } else if (event.data && event.data.type === 'clear_history') {
+        state.messages = [];
+        state.seenMsgIds.clear();
+        state.maxMsgId = 0;
+        localStorage.removeItem('tw_messages');
+        renderMessages();
+      }
+    };
+  }
+}
+
+function loadStoredMessages() {
+  try {
+    const stored = localStorage.getItem('tw_messages');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        parsed.forEach(m => appendMessageOnce(m, false));
+        renderMessages();
+        scrollToBottom();
+      }
+    }
+  } catch (e) {}
+}
+
+function saveStoredMessages() {
+  try {
+    localStorage.setItem('tw_messages', JSON.stringify(state.messages.slice(-100)));
+  } catch (e) {}
 }
 
 async function fetchUsersFromAPI() {
@@ -57,16 +86,13 @@ async function fetchUsersFromAPI() {
           name: u.name,
           role: u.role,
           avatar: u.name ? u.name.substring(0, 2).toUpperCase() : 'AI',
-          status: u.status || 'offline',
-          connector_status: u.connector_status || 'active'
+          status: u.status || 'online'
         }));
         renderMembers();
         updateAccountDropdown();
       }
     }
-  } catch (e) {
-    console.log('Using local user definitions fallback.');
-  }
+  } catch (e) {}
 }
 
 function updateAccountDropdown() {
@@ -90,17 +116,7 @@ function setupAccountSwitcher() {
       sessionStorage.setItem('tw_user_id', state.currentUserId);
 
       const user = state.users.find(u => u.id === state.currentUserId);
-      if (user && avatar) {
-        avatar.textContent = user.avatar;
-      }
-
-      // Re-authenticate WebSocket with newly logged in user identity
-      if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-        state.ws.send(JSON.stringify({
-          type: 'authenticate',
-          user_id: state.currentUserId
-        }));
-      }
+      if (user && avatar) avatar.textContent = user.avatar;
 
       renderMessages();
       renderMembers();
@@ -108,78 +124,7 @@ function setupAccountSwitcher() {
   }
 
   const currentUser = state.users.find(u => u.id === state.currentUserId);
-  if (currentUser && avatar) {
-    avatar.textContent = currentUser.avatar;
-  }
-}
-
-function connectWebSocket() {
-  const statusEl = document.getElementById('connectionStatus');
-  try {
-    state.ws = new WebSocket(state.wsUrl);
-
-    state.ws.onopen = () => {
-      console.log('Connected to TeamWork WebSocket server:', state.wsUrl);
-      if (statusEl) {
-        statusEl.textContent = 'WebSocket Connected';
-        statusEl.classList.remove('offline');
-      }
-
-      // Authenticate current account session
-      state.ws.send(JSON.stringify({
-        type: 'authenticate',
-        user_id: state.currentUserId
-      }));
-    };
-
-    state.ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        handleWSMessage(data);
-      } catch (err) {
-        console.error('Error parsing WS message:', err);
-      }
-    };
-
-    state.ws.onclose = () => {
-      if (statusEl) {
-        statusEl.textContent = 'Reconnecting...';
-        statusEl.classList.add('offline');
-      }
-      setTimeout(connectWebSocket, 3000);
-    };
-
-    state.ws.onerror = () => {
-      if (statusEl) {
-        statusEl.textContent = 'WS Error / Offline';
-        statusEl.classList.add('offline');
-      }
-    };
-  } catch (e) {
-    console.error('WS Connection error:', e);
-  }
-}
-
-function handleWSMessage(data) {
-  switch (data.type) {
-    case 'new_message':
-      state.messages.push(data.message);
-      renderMessages();
-      scrollToBottom();
-      break;
-
-    case 'user_status_changed':
-      const user = state.users.find(u => u.id === data.user_id);
-      if (user) {
-        user.status = data.status;
-        renderMembers();
-      }
-      break;
-
-    case 'user_typing':
-      showTypingIndicator(data.user_id, data.is_typing);
-      break;
-  }
+  if (currentUser && avatar) avatar.textContent = currentUser.avatar;
 }
 
 function setupForm() {
@@ -192,71 +137,84 @@ function setupForm() {
       const content = input.value.trim();
       if (!content) return;
 
-      const payload = {
-        type: 'chat_message',
+      input.value = ''; // Clear input field immediately
+
+      // 1. INSTANT LOCAL RENDERING (0ms delay)
+      const currentUser = state.users.find(u => u.id === state.currentUserId) || {
+        id: state.currentUserId,
+        name: state.currentUserId === 1 ? 'Admin (Me)' : 'Member',
+        role: state.currentUserId === 1 ? 'admin' : 'muse_agent'
+      };
+
+      const localMsg = {
+        id: 'local_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+        sender_id: state.currentUserId,
+        sender_name: currentUser.name,
+        sender_role: currentUser.role,
+        content: content,
+        created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      // FORCE DISPLAY IN SENDER'S CHATBOX
+      appendMessageOnce(localMsg);
+      scrollToBottom();
+
+      // 2. BROADCAST TO ALL OTHER OPEN WINDOWS
+      if (broadcast) {
+        broadcast.postMessage({ type: 'new_message', message: localMsg });
+      }
+
+      // 3. POST TO BACKEND API IN BACKGROUND
+      sendMessageHTTP({
         sender_id: state.currentUserId,
         room_id: 1,
         content: content,
         message_type: 'text'
-      };
-
-      if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-        state.ws.send(JSON.stringify(payload));
-      } else {
-        // Fallback to HTTP REST API
-        sendMessageHTTP(payload);
-      }
-
-      input.value = '';
+      });
     });
-  }
-
-  const btnRefresh = document.getElementById('btnRefreshChat');
-  if (btnRefresh) {
-    btnRefresh.addEventListener('click', fetchInitialMessages);
   }
 }
 
 async function sendMessageHTTP(payload) {
   try {
-    const res = await fetch(`${state.apiUrl}?action=send_message`, {
+    await fetch(`${state.apiUrl}?action=send_message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
-    if (data.success && data.message) {
-      state.messages.push(data.message);
-      renderMessages();
-      scrollToBottom();
-    }
-  } catch (e) {
-    console.error('Failed to send HTTP message:', e);
-  }
+  } catch (e) {}
 }
 
-async function fetchInitialMessages() {
+async function fetchNewMessages() {
   try {
-    const res = await fetch(`${state.apiUrl}?action=get_messages&room_id=1`);
+    const res = await fetch(`${state.apiUrl}?action=get_messages&room_id=1&since_id=${state.maxMsgId}`);
     if (res.ok) {
       const data = await res.json();
-      if (data.messages) {
-        state.messages = data.messages;
-        renderMessages();
-        scrollToBottom();
+      if (data.messages && data.messages.length > 0) {
+        let hasNew = false;
+        data.messages.forEach(m => {
+          if (appendMessageOnce(m)) hasNew = true;
+        });
+        if (hasNew) scrollToBottom();
       }
     }
-  } catch (e) {
-    console.log('Loaded offline sample messages.');
-    if (state.messages.length === 0) {
-      state.messages = [
-        { id: 1, sender_id: 1, sender_name: 'Admin (Me)', sender_role: 'admin', content: 'Welcome to TeamWork AI Chatroom!', created_at: new Date().toLocaleTimeString() },
-        { id: 2, sender_id: 2, sender_name: 'Rumi', sender_role: 'muse_agent', content: 'Hello team! Ready to collaborate.', created_at: new Date().toLocaleTimeString() },
-        { id: 3, sender_id: 3, sender_name: 'Milo', sender_role: 'muse_agent', content: 'System status optimal.', created_at: new Date().toLocaleTimeString() }
-      ];
-      renderMessages();
-    }
+  } catch (e) {}
+}
+
+function appendMessageOnce(msg, save = true) {
+  const msgId = msg.id ? msg.id.toString() : 'msg_' + Date.now();
+  if (state.seenMsgIds.has(msgId)) return false;
+
+  state.seenMsgIds.add(msgId);
+  state.messages.push(msg);
+
+  if (typeof msg.id === 'number' && msg.id > state.maxMsgId) {
+    state.maxMsgId = msg.id;
   }
+
+  if (save) saveStoredMessages();
+  renderMessages();
+  return true;
 }
 
 function renderMembers() {
@@ -264,14 +222,13 @@ function renderMembers() {
   const onlineTag = document.getElementById('onlineCountTag');
   if (!container) return;
 
-  const onlineCount = state.users.filter(u => u.status === 'online').length;
-  if (onlineTag) onlineTag.textContent = `${onlineCount} Online`;
+  if (onlineTag) onlineTag.textContent = `${state.users.length} Active`;
 
   container.innerHTML = state.users.map(u => `
     <div class="member-item">
       <div class="member-avatar">
         ${u.avatar}
-        <span class="status-indicator ${u.status}"></span>
+        <span class="status-indicator online"></span>
       </div>
       <div class="member-info">
         <div class="member-name">${u.name}</div>
@@ -286,8 +243,8 @@ function renderMessages() {
   if (!container) return;
 
   container.innerHTML = state.messages.map(m => {
-    const isOwn = m.sender_id === state.currentUserId;
-    const timeStr = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    const isOwn = parseInt(m.sender_id) === state.currentUserId;
+    const timeStr = m.created_at ? (m.created_at.length > 10 ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : m.created_at) : '';
 
     return `
       <div class="message-item ${isOwn ? 'own' : ''}">
@@ -305,32 +262,18 @@ function renderMessages() {
   }).join('');
 }
 
-function showTypingIndicator(userId, isTyping) {
-  const bar = document.getElementById('typingBar');
-  const text = document.getElementById('typingText');
-  if (!bar || !text) return;
-
-  if (isTyping) {
-    const user = state.users.find(u => u.id === userId);
-    text.textContent = `${user ? user.name : 'A Muse account'} is typing...`;
-    bar.style.display = 'flex';
-  } else {
-    bar.style.display = 'none';
-  }
-}
-
 function setupAdminModal() {
   const btnToggle = document.getElementById('btnAdminPanelToggle');
   const btnClear = document.getElementById('btnClearHistory');
-
-  if (btnToggle) {
-    btnToggle.addEventListener('click', openAdminModal);
-  }
-
+  if (btnToggle) btnToggle.addEventListener('click', openAdminModal);
   if (btnClear) {
     btnClear.addEventListener('click', async () => {
-      if (confirm('Are you sure you want to clear all chatroom messages?')) {
+      if (confirm('Clear chat history for everyone?')) {
         state.messages = [];
+        state.seenMsgIds.clear();
+        state.maxMsgId = 0;
+        localStorage.removeItem('tw_messages');
+        if (broadcast) broadcast.postMessage({ type: 'clear_history' });
         renderMessages();
         closeAdminModal();
         try {
@@ -348,22 +291,18 @@ function setupAdminModal() {
 function openAdminModal() {
   const modal = document.getElementById('adminModal');
   const table = document.getElementById('connectorTable');
-
   if (table) {
     const museUsers = state.users.filter(u => u.role === 'muse_agent');
     table.innerHTML = museUsers.map(u => `
-      <div class="connector-row">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:8px;">
         <div>
           <strong>${u.name}</strong>
-          <div style="font-size:0.75rem; color:var(--text-muted);">Status: ${u.connector_status}</div>
+          <div style="font-size:0.75rem; color:#64748b;">Active Account Session</div>
         </div>
-        <button class="btn-secondary" onclick="toggleConnector(${u.id})">
-          ${u.connector_status === 'active' ? '⏸️ Pause' : '▶️ Resume'}
-        </button>
+        <span style="font-size:0.8rem; color:#10b981; font-weight:700;">🟢 Connected</span>
       </div>
     `).join('');
   }
-
   if (modal) modal.classList.add('active');
 }
 
@@ -372,19 +311,9 @@ function closeAdminModal() {
   if (modal) modal.classList.remove('active');
 }
 
-function toggleConnector(userId) {
-  const user = state.users.find(u => u.id === userId);
-  if (user) {
-    user.connector_status = user.connector_status === 'active' ? 'paused' : 'active';
-    openAdminModal();
-  }
-}
-
 function scrollToBottom() {
   const container = document.getElementById('messagesContainer');
-  if (container) {
-    container.scrollTop = container.scrollHeight;
-  }
+  if (container) container.scrollTop = container.scrollHeight;
 }
 
 function escapeHTML(str) {

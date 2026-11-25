@@ -3,12 +3,11 @@
 
 // Handle API requests if 'action' parameter is present
 if (isset($_GET['action']) || isset($_POST['action'])) {
-    // Graceful error handling wrapper
     try {
         require_once __DIR__ . '/backend/api.php';
     } catch (Throwable $e) {
         header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'error' => 'API Fallback Mode']);
+        echo json_encode(['success' => false, 'error' => 'API Fallback']);
     }
     exit();
 }
@@ -76,7 +75,7 @@ $version = time();
     .chat-header h2 { font-size: 1.15rem; font-weight: 700; margin: 0; }
     .subtitle { font-size: 0.82rem; color: var(--text-muted); margin-top: 2px; }
 
-    .messages-container { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+    .messages-container { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; min-height: 200px; }
     .message-item { display: flex; gap: 12px; max-width: 80%; }
     .message-item.own { align-self: flex-end; flex-direction: row-reverse; }
     .msg-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--primary-gradient); color: #fff; font-weight: 700; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -124,7 +123,6 @@ $version = time();
 
       <div class="header-right">
         <div class="account-switcher">
-          <label for="accountSelect" style="font-size:0.8rem; font-weight:600; margin-right:6px;">Logged in as:</label>
           <select id="accountSelect" class="account-dropdown">
             <option value="1">👑 Admin (Me)</option>
             <option value="2">🤖 Rumi</option>
@@ -176,7 +174,7 @@ $version = time();
         </div>
 
         <form class="chat-input-form" id="chatForm">
-          <input type="text" id="chatInput" class="chat-input" placeholder="Type a message or @mention Rumi, Milo, Azar, Faiz or Bobby..." autocomplete="off" required>
+          <input type="text" id="chatInput" class="chat-input" placeholder="Type a message to the team..." autocomplete="off" required>
           <button type="submit" class="btn-send">Send</button>
         </form>
       </main>
@@ -198,7 +196,7 @@ $version = time();
   </div>
 
   <script>
-    // Bulletproof Real-time Sync Engine (BroadcastChannel + LocalStorage + API)
+    // Instant Cross-Window Sync Engine
     const broadcast = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('teamwork_room_sync') : null;
 
     const state = {
@@ -227,7 +225,6 @@ $version = time();
       fetchNewMessages();
       renderMembers();
 
-      // Poll server API every 1.5s
       setInterval(fetchNewMessages, 1500);
     });
 
@@ -325,33 +322,39 @@ $version = time();
       const input = document.getElementById('chatInput');
 
       if (form) {
-        form.addEventListener('submit', async (e) => {
+        form.addEventListener('submit', (e) => {
           e.preventDefault();
           const content = input.value.trim();
           if (!content) return;
 
-          const currentUser = state.users.find(u => u.id === state.currentUserId);
-          const msgObj = {
-            id: Date.now() + Math.floor(Math.random() * 1000),
+          input.value = ''; // Clear input field immediately
+
+          // 1. INSTANT LOCAL RENDERING (0ms delay)
+          const currentUser = state.users.find(u => u.id === state.currentUserId) || {
+            id: state.currentUserId,
+            name: state.currentUserId === 1 ? 'Admin (Me)' : 'Member',
+            role: state.currentUserId === 1 ? 'admin' : 'muse_agent'
+          };
+
+          const localMsg = {
+            id: 'local_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
             sender_id: state.currentUserId,
-            sender_name: currentUser ? currentUser.name : 'User',
-            sender_role: currentUser ? currentUser.role : 'muse_agent',
+            sender_name: currentUser.name,
+            sender_role: currentUser.role,
             content: content,
             created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           };
 
-          input.value = '';
-
-          // 1. Instantly append to current window
-          appendMessageOnce(msgObj);
+          // FORCE DISPLAY IN SENDER'S CHATBOX
+          appendMessageOnce(localMsg);
           scrollToBottom();
 
-          // 2. Instantly broadcast to all other open tabs/windows
+          // 2. BROADCAST TO ALL OTHER OPEN WINDOWS
           if (broadcast) {
-            broadcast.postMessage({ type: 'new_message', message: msgObj });
+            broadcast.postMessage({ type: 'new_message', message: localMsg });
           }
 
-          // 3. Post to backend API
+          // 3. POST TO BACKEND API IN BACKGROUND
           sendMessageHTTP({
             sender_id: state.currentUserId,
             room_id: 1,
@@ -389,12 +392,15 @@ $version = time();
     }
 
     function appendMessageOnce(msg, save = true) {
-      const msgId = parseInt(msg.id) || Date.now();
+      const msgId = msg.id ? msg.id.toString() : 'msg_' + Date.now();
       if (state.seenMsgIds.has(msgId)) return false;
 
       state.seenMsgIds.add(msgId);
       state.messages.push(msg);
-      if (msgId > state.maxMsgId) state.maxMsgId = msgId;
+
+      if (typeof msg.id === 'number' && msg.id > state.maxMsgId) {
+        state.maxMsgId = msg.id;
+      }
 
       if (save) saveStoredMessages();
       renderMessages();
