@@ -13,8 +13,8 @@ class Database {
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                     PDO::ATTR_EMULATE_PREPARES => false,
                 ]);
-            } catch (PDOException $e) {
-                // MySQL database connection failed, fallback to JSON storage engine
+            } catch (Throwable $e) {
+                // Silently return null on database connection failure so application never crashes
                 return null;
             }
         }
